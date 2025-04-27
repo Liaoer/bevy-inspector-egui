@@ -9,15 +9,10 @@
 use std::{marker::PhantomData, sync::Mutex};
 
 use crate::{bevy_inspector::Filter, utils::pretty_type_name};
-use bevy_app::{App, MainScheduleOrder, Plugin, Update};
+use bevy_app::Plugin;
 use bevy_asset::Asset;
-use bevy_core::TypeRegistrationPlugin;
-use bevy_ecs::{
-    prelude::*,
-    query::QueryFilter,
-    schedule::{BoxedCondition, ScheduleLabel},
-};
-use bevy_egui::{EguiContext, EguiPlugin};
+use bevy_ecs::{prelude::*, query::QueryFilter, schedule::BoxedCondition};
+use bevy_egui::{EguiContext, EguiContextPass, EguiPlugin};
 use bevy_reflect::Reflect;
 use bevy_state::state::FreelyMutableState;
 use bevy_window::PrimaryWindow;
@@ -26,19 +21,20 @@ use crate::{bevy_inspector, DefaultInspectorConfigPlugin};
 
 const DEFAULT_SIZE: (f32, f32) = (320., 160.);
 
-#[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
-struct Inspect;
+//TODO: Do we need this with EguiContextPass?
+// #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
+// struct Inspect;
 
-struct InspectSchedulePlugin;
-impl Plugin for InspectSchedulePlugin {
-    fn build(&self, app: &mut App) {
-        app.init_schedule(Inspect);
+// struct InspectSchedulePlugin;
+// impl Plugin for InspectSchedulePlugin {
+//     fn build(&self, app: &mut App) {
+//         app.init_schedule(Inspect);
 
-        app.world_mut()
-            .resource_mut::<MainScheduleOrder>()
-            .insert_after(Update, Inspect);
-    }
-}
+//         app.world_mut()
+//             .resource_mut::<MainScheduleOrder>()
+//             .insert_after(Update, Inspect);
+//     }
+// }
 
 /// Plugin displaying a egui window with an entity list, resources and assets
 ///
@@ -47,12 +43,13 @@ impl Plugin for InspectSchedulePlugin {
 ///
 /// ```no_run
 /// use bevy::prelude::*;
-/// use bevy_inspector_egui::prelude::*;
+/// use bevy_inspector_egui::{bevy_egui::EguiPlugin, prelude::*};
 /// use bevy_inspector_egui::quick::WorldInspectorPlugin;
 ///
 /// fn main() {
 ///     App::new()
 ///         .add_plugins(DefaultPlugins)
+///         .add_plugins(EguiPlugin { enable_multipass_for_primary_context: true })
 ///         .add_plugins(WorldInspectorPlugin::new())
 ///         .run();
 /// }
@@ -77,16 +74,10 @@ impl WorldInspectorPlugin {
 
 impl Plugin for WorldInspectorPlugin {
     fn build(&self, app: &mut bevy_app::App) {
-        check_default_plugins(app, "WorldInspectorPlugin");
+        check_plugins(app, "WorldInspectorPlugin");
 
         if !app.is_plugin_added::<DefaultInspectorConfigPlugin>() {
             app.add_plugins(DefaultInspectorConfigPlugin);
-        }
-        if !app.is_plugin_added::<EguiPlugin>() {
-            app.add_plugins(EguiPlugin);
-        }
-        if !app.is_plugin_added::<InspectSchedulePlugin>() {
-            app.add_plugins(InspectSchedulePlugin);
         }
 
         let condition = self.condition.lock().unwrap().take();
@@ -94,14 +85,14 @@ impl Plugin for WorldInspectorPlugin {
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(Inspect, system);
+        app.add_systems(EguiContextPass, system);
     }
 }
 
 fn world_inspector_ui(world: &mut World) {
     let egui_context = world
         .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
-        .get_single(world);
+        .single(world);
 
     let Ok(egui_context) = egui_context else {
         return;
@@ -178,16 +169,10 @@ impl<T> ResourceInspectorPlugin<T> {
 
 impl<T: Resource + Reflect> Plugin for ResourceInspectorPlugin<T> {
     fn build(&self, app: &mut bevy_app::App) {
-        check_default_plugins(app, "ResourceInspectorPlugin");
+        check_plugins(app, "ResourceInspectorPlugin");
 
         if !app.is_plugin_added::<DefaultInspectorConfigPlugin>() {
             app.add_plugins(DefaultInspectorConfigPlugin);
-        }
-        if !app.is_plugin_added::<EguiPlugin>() {
-            app.add_plugins(EguiPlugin);
-        }
-        if !app.is_plugin_added::<InspectSchedulePlugin>() {
-            app.add_plugins(InspectSchedulePlugin);
         }
 
         let condition = self.condition.lock().unwrap().take();
@@ -195,14 +180,14 @@ impl<T: Resource + Reflect> Plugin for ResourceInspectorPlugin<T> {
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(Inspect, system);
+        app.add_systems(EguiContextPass, system);
     }
 }
 
 fn inspector_ui<T: Resource + Reflect>(world: &mut World) {
     let egui_context = world
         .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
-        .get_single(world);
+        .single(world);
 
     let Ok(egui_context) = egui_context else {
         return;
@@ -277,16 +262,10 @@ impl<T> StateInspectorPlugin<T> {
 
 impl<T: FreelyMutableState + Reflect> Plugin for StateInspectorPlugin<T> {
     fn build(&self, app: &mut bevy_app::App) {
-        check_default_plugins(app, "StateInspectorPlugin");
+        check_plugins(app, "StateInspectorPlugin");
 
         if !app.is_plugin_added::<DefaultInspectorConfigPlugin>() {
             app.add_plugins(DefaultInspectorConfigPlugin);
-        }
-        if !app.is_plugin_added::<EguiPlugin>() {
-            app.add_plugins(EguiPlugin);
-        }
-        if !app.is_plugin_added::<InspectSchedulePlugin>() {
-            app.add_plugins(InspectSchedulePlugin);
         }
 
         let condition = self.condition.lock().unwrap().take();
@@ -294,14 +273,14 @@ impl<T: FreelyMutableState + Reflect> Plugin for StateInspectorPlugin<T> {
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(Inspect, system);
+        app.add_systems(EguiContextPass, system);
     }
 }
 
 fn state_ui<T: FreelyMutableState + Reflect>(world: &mut World) {
     let egui_context = world
         .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
-        .get_single(world);
+        .single(world);
 
     let Ok(egui_context) = egui_context else {
         return;
@@ -364,16 +343,10 @@ impl<A> AssetInspectorPlugin<A> {
 
 impl<A: Asset + Reflect> Plugin for AssetInspectorPlugin<A> {
     fn build(&self, app: &mut bevy_app::App) {
-        check_default_plugins(app, "AssetInspectorPlugin");
+        check_plugins(app, "AssetInspectorPlugin");
 
         if !app.is_plugin_added::<DefaultInspectorConfigPlugin>() {
             app.add_plugins(DefaultInspectorConfigPlugin);
-        }
-        if !app.is_plugin_added::<EguiPlugin>() {
-            app.add_plugins(EguiPlugin);
-        }
-        if !app.is_plugin_added::<InspectSchedulePlugin>() {
-            app.add_plugins(InspectSchedulePlugin);
         }
 
         let condition = self.condition.lock().unwrap().take();
@@ -381,14 +354,14 @@ impl<A: Asset + Reflect> Plugin for AssetInspectorPlugin<A> {
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(Inspect, system);
+        app.add_systems(EguiContextPass, system);
     }
 }
 
 fn asset_inspector_ui<A: Asset + Reflect>(world: &mut World) {
     let egui_context = world
         .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
-        .get_single(world);
+        .single(world);
 
     let Ok(egui_context) = egui_context else {
         return;
@@ -449,16 +422,10 @@ where
     F: QueryFilter,
 {
     fn build(&self, app: &mut bevy_app::App) {
-        check_default_plugins(app, "FilterQueryInspectorPlugin");
+        check_plugins(app, "FilterQueryInspectorPlugin");
 
         if !app.is_plugin_added::<DefaultInspectorConfigPlugin>() {
             app.add_plugins(DefaultInspectorConfigPlugin);
-        }
-        if !app.is_plugin_added::<EguiPlugin>() {
-            app.add_plugins(EguiPlugin);
-        }
-        if !app.is_plugin_added::<InspectSchedulePlugin>() {
-            app.add_plugins(InspectSchedulePlugin);
         }
 
         let condition: Option<Box<dyn ReadOnlySystem<In = (), Out = bool>>> =
@@ -467,14 +434,14 @@ where
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(Inspect, system);
+        app.add_systems(EguiContextPass, system);
     }
 }
 
 fn entity_query_ui<F: QueryFilter>(world: &mut World) {
     let egui_context = world
         .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
-        .get_single(world);
+        .single(world);
 
     let Ok(egui_context) = egui_context else {
         return;
@@ -491,14 +458,23 @@ fn entity_query_ui<F: QueryFilter>(world: &mut World) {
         });
 }
 
-fn check_default_plugins(app: &bevy_app::App, name: &str) {
-    if !app.is_plugin_added::<TypeRegistrationPlugin>() {
+fn check_plugins(app: &bevy_app::App, name: &str) {
+    if !app.is_plugin_added::<bevy_app::MainSchedulePlugin>() {
         panic!(
             r#"`{name}` should be added after the default plugins:
         .add_plugins(DefaultPlugins)
+        .add_plugins(EguiPlugin {{ .. }})
         .add_plugins({name}::default())
             "#,
-            name = name,
+        );
+    }
+
+    if !app.is_plugin_added::<EguiPlugin>() {
+        panic!(
+            r#"`{name}` needs to be added after `EguiPlugin`:
+        .add_plugins(EguiPlugin {{ enable_multipass_for_primary_context: true }})
+        .add_plugins({name}::default())
+            "#,
         );
     }
 }

@@ -1,10 +1,14 @@
 use bevy::input::common_conditions::input_toggle_active;
 use bevy::prelude::*;
+use bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(EguiPlugin {
+            enable_multipass_for_primary_context: true,
+        })
         .add_plugins(
             WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Escape)),
         )

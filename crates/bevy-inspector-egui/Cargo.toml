@@ -37,13 +37,13 @@ features = ["winit/x11"]
 [dependencies]
 winit = { version = "0.30.0", default-features = false }
 
-bevy-inspector-egui-derive = { version = "0.30.0", path = "../bevy-inspector-egui-derive" }
+bevy-inspector-egui-derive = { version = "0.31.0", path = "../bevy-inspector-egui-derive" }
 bevy_app = {path = "../../../../bevy_engine/crates/bevy_app" }
 bevy_asset = {path = "../../../../bevy_engine/crates/bevy_asset" }
 bevy_color = { path = "../../../../bevy_engine/crates/bevy_color" }
-bevy_core = {path = "../../../../bevy_engine/crates/bevy_core" }
+#bevy_core = {path = "../../../../bevy_engine/crates/bevy_core" }
 bevy_ecs = { path = "../../../../bevy_engine/crates/bevy_ecs" }
-bevy_hierarchy = {path = "../../../../bevy_engine/crates/bevy_hierarchy" }
+#bevy_hierarchy = {path = "../../../../bevy_engine/crates/bevy_hierarchy" }
 bevy_log = { path = "../../../../bevy_engine/crates/bevy_log" }
 bevy_math = { path = "../../../../bevy_engine/crates/bevy_math" }
 bevy_reflect = { path = "../../../../bevy_engine/crates/bevy_reflect" }
@@ -51,6 +51,7 @@ bevy_state = { path = "../../../../bevy_engine/crates/bevy_state" }
 bevy_time = { path = "../../../../bevy_engine/crates/bevy_time" }
 bevy_utils = {path = "../../../../bevy_engine/crates/bevy_utils" }
 bevy_window = { path = "../../../../bevy_engine/crates/bevy_window" }
+bevy_platform = { path = "../../../../bevy_engine/crates/bevy_platform" }
 
 bevy_render = { path = "../../../../bevy_engine/crates/bevy_render", optional = true }
 bevy_core_pipeline = {path = "../../../../bevy_engine/crates/bevy_core_pipeline", optional = true }
@@ -85,7 +86,7 @@ bevy = { path = "../../../../bevy_engine", default-features = false, features = 
     "ktx2",
 ] }
 egui_dock = "0.16"
-bevy_math = { version = "0.16.0", features = ["mint"] }
+bevy_math = { path="../../../../bevy_engine/crates/bevy_math", features = ["mint"] }
 transform-gizmo-egui = "0.5"
 # bevy_mod_picking = { git = "https://github.com/aevyrie/bevy_mod_picking", rev = "554649a951689dce66d0d759839b326874e8826f", default-features = false, features = ["backend_raycast", "backend_egui", "backend_sprite"] }
 # bevy_framepace = "0.11"

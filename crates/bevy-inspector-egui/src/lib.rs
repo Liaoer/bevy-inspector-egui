@@ -76,7 +76,7 @@
 //!
 //! ```no_run
 //! use bevy::prelude::*;
-//! use bevy_egui::{EguiPlugin, EguiContext, EguiContextPass};
+//! use bevy_egui::{EguiPlugin, EguiContext, EguiPrimaryContextPass};
 //! use bevy_inspector_egui::prelude::*;
 //! use bevy_inspector_egui::bevy_inspector;
 //! use bevy_window::PrimaryWindow;
@@ -85,15 +85,15 @@
 //! fn main() {
 //!     App::new()
 //!         .add_plugins(DefaultPlugins)
-//!         .add_plugins(EguiPlugin { enable_multipass_for_primary_context: true })
+//!         .add_plugins(EguiPlugin::default())
 //!         .add_plugins(bevy_inspector_egui::DefaultInspectorConfigPlugin) // adds default options and `InspectorEguiImpl`s
-//!         .add_systems(EguiContextPass, inspector_ui)
+//!         .add_systems(EguiPrimaryContextPass, inspector_ui)
 //!         .run();
 //! }
 //!
 //! fn inspector_ui(world: &mut World) {
 //!     let mut egui_context = world
-//!         .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+//!         .query_filtered::<&mut EguiContext, With<bevy_egui::PrimaryEguiContext>>()
 //!         .single(world)
 //!         .expect("EguiContext not found")
 //!         .clone();
@@ -147,6 +147,8 @@ pub mod dropdown;
 pub mod egui_utils;
 mod utils;
 
+use std::any::TypeId;
+
 #[cfg(feature = "bevy_render")]
 pub use bevy_egui;
 pub use egui;
@@ -193,7 +195,8 @@ impl bevy_app::Plugin for DefaultInspectorConfigPlugin {
             .register_type::<bevy_math::Quat>()
             .register_type::<bevy_math::Rect>()
             .register_type::<bevy_color::Color>()
-            .register_type::<core::ops::Range<f32>>();
+            .register_type::<core::ops::Range<f32>>()
+            .register_type::<TypeId>();
 
         let type_registry = app.world().resource::<bevy_ecs::prelude::AppTypeRegistry>();
         let mut type_registry = type_registry.write();

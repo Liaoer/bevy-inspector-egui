@@ -1,83 +1,95 @@
-use bevy::prelude::*;
-use bevy_asset::{ReflectAsset, UntypedAssetId};
-use bevy_egui::{EguiContext, EguiContextPass, EguiContextSettings};
-use bevy_inspector_egui::bevy_inspector::hierarchy::{hierarchy_ui, SelectedEntities};
+use bevy::{
+    asset::{ReflectAsset, UntypedAssetId},
+    color::palettes::tailwind::*,
+    picking::pointer::{PointerAction, PointerInput, PointerInteraction},
+    prelude::*,
+};
+use bevy_camera::{Viewport, visibility::RenderLayers};
+use bevy_egui::{EguiGlobalSettings, EguiPrimaryContextPass, PrimaryEguiContext};
+use bevy_inspector_egui::DefaultInspectorConfigPlugin;
+use bevy_inspector_egui::bevy_egui::{EguiContext, EguiContextSettings};
+use bevy_inspector_egui::bevy_inspector::hierarchy::{SelectedEntities, hierarchy_ui};
 use bevy_inspector_egui::bevy_inspector::{
     self, ui_for_entities_shared_components, ui_for_entity_with_children,
 };
-use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use bevy_math::{DQuat, DVec3};
-use std::any::TypeId;
-// use bevy_mod_picking::backends::egui::EguiPointer;
-// use bevy_mod_picking::prelude::*;
 use bevy_reflect::TypeRegistry;
-use bevy_render::camera::{CameraProjection, Viewport};
 use bevy_window::{PrimaryWindow, Window};
+use egui::LayerId;
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
-
-use transform_gizmo_egui::{Gizmo, GizmoConfig, GizmoExt, GizmoOrientation};
+use std::any::TypeId;
+use transform_gizmo_bevy::{GizmoCamera, GizmoTarget, TransformGizmoPlugin};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(MeshPickingPlugin)
+        .add_plugins(TransformGizmoPlugin)
         // .add_plugins(bevy_framepace::FramepacePlugin) // reduces input lag
-        .add_plugins(bevy_egui::EguiPlugin {
-            enable_multipass_for_primary_context: true,
-        })
+        .add_plugins(bevy_egui::EguiPlugin::default())
         .add_plugins(DefaultInspectorConfigPlugin)
-        // .add_plugins(bevy_mod_picking::plugins::DefaultPickingPlugins)
         .insert_resource(UiState::new())
         .add_systems(Startup, setup)
-        .add_systems(EguiContextPass, show_ui_system)
+        .add_systems(EguiPrimaryContextPass, show_ui_system)
         .add_systems(PostUpdate, set_camera_viewport.after(show_ui_system))
-        // .add_systems(Update, auto_add_raycast_target)
-        // .add_systems(Update, handle_pick_events)
+        .add_systems(Update, draw_mesh_intersections)
+        .add_systems(PostUpdate, handle_pick_events)
         .register_type::<Option<Handle<Image>>>()
         .register_type::<AlphaMode>()
         .run();
 }
 
-/*
-fn auto_add_raycast_target(
-    mut commands: Commands,
-    query: Query<Entity, (Without<PickRaycastTarget>, With<Handle<Mesh>>)>,
-) {
-    for entity in &query {
-        commands
-            .entity(entity)
-            .insert((PickRaycastTarget::default(), PickableBundle::default()));
+fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
+    for (point, normal) in pointers
+        .iter()
+        .filter_map(|interaction| interaction.get_nearest_hit())
+        .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
+    {
+        gizmos.sphere(point, 0.05, RED_500);
+        gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
     }
 }
 
 fn handle_pick_events(
     mut ui_state: ResMut<UiState>,
-    mut click_events: EventReader<PointerClick>,
-    mut egui: ResMut<EguiContext>,
-    egui_entity: Query<&EguiPointer>,
+    mut click_events: MessageReader<PointerInput>,
+    pointers: Query<&PointerInteraction>,
+    button: Res<ButtonInput<KeyCode>>,
+    gizmo_targets: Query<(Entity, &GizmoTarget)>,
+    mut commands: Commands,
 ) {
-    let egui_context = egui.ctx_mut();
+    if !ui_state.pointer_in_viewport {
+        return;
+    }
+    for event in click_events.read() {
+        if let PointerAction::Press(PointerButton::Primary) = event.action {
+            if gizmo_targets.iter().any(|(_, target)| target.is_focused()) {
+                continue;
+            }
 
-    for click in click_events.iter() {
-        if egui_entity.get(click.target()).is_ok() {
-            continue;
-        };
+            for interaction in pointers {
+                for (entity, _) in interaction.as_slice() {
+                    let add = button.any_pressed([KeyCode::ControlLeft, KeyCode::ShiftLeft]);
+                    ui_state.selected_entities.select_maybe_add(*entity, add);
 
-        let modifiers = egui_context.input().modifiers;
-        let add = modifiers.ctrl || modifiers.shift;
-
-        ui_state
-            .selected_entities
-            .select_maybe_add(click.target(), add);
+                    for (target, _) in gizmo_targets.iter() {
+                        if !ui_state.selected_entities.contains(target) {
+                            commands.entity(target).remove::<GizmoTarget>();
+                        }
+                    }
+                    for selected in ui_state.selected_entities.iter() {
+                        if !gizmo_targets.contains(selected) {
+                            commands.entity(selected).insert(GizmoTarget::default());
+                        }
+                    }
+                }
+            }
+        }
     }
 }
-*/
-
-#[derive(Component)]
-struct MainCamera;
 
 fn show_ui_system(world: &mut World) {
     let Ok(egui_context) = world
-        .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .single(world)
     else {
         return;
@@ -92,14 +104,10 @@ fn show_ui_system(world: &mut World) {
 // make camera only render to view not obstructed by UI
 fn set_camera_viewport(
     ui_state: Res<UiState>,
-    primary_window: Query<&mut Window, With<PrimaryWindow>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut cam: Single<&mut Camera, Without<PrimaryEguiContext>>,
     egui_settings: Single<&EguiContextSettings>,
-    mut cam: Single<&mut Camera, With<MainCamera>>,
 ) {
-    let Ok(window) = primary_window.single() else {
-        return;
-    };
-
     let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 
     let viewport_pos = ui_state.viewport_rect.left_top().to_vec2() * scale_factor;
@@ -108,14 +116,9 @@ fn set_camera_viewport(
     let physical_position = UVec2::new(viewport_pos.x as u32, viewport_pos.y as u32);
     let physical_size = UVec2::new(viewport_size.x as u32, viewport_size.y as u32);
 
-    // The desired viewport rectangle at its offset in "physical pixel space"
     let rect = physical_position + physical_size;
 
     let window_size = window.physical_size();
-    // wgpu will panic if trying to set a viewport rect which has coordinates extending
-    // past the size of the render target, i.e. the physical window in our case.
-    // Typically this shouldn't happen- but during init and resizing etc. edge cases might occur.
-    // Simply do nothing in those cases.
     if rect.x <= window_size.x && rect.y <= window_size.y {
         cam.viewport = Some(Viewport {
             physical_position,
@@ -138,7 +141,7 @@ struct UiState {
     viewport_rect: egui::Rect,
     selected_entities: SelectedEntities,
     selection: InspectorSelection,
-    gizmo: Gizmo,
+    pointer_in_viewport: bool,
 }
 
 impl UiState {
@@ -156,7 +159,7 @@ impl UiState {
             selected_entities: SelectedEntities::default(),
             selection: InspectorSelection::Entities,
             viewport_rect: egui::Rect::NOTHING,
-            gizmo: Gizmo::default(),
+            pointer_in_viewport: false,
         }
     }
 
@@ -166,7 +169,7 @@ impl UiState {
             viewport_rect: &mut self.viewport_rect,
             selected_entities: &mut self.selected_entities,
             selection: &mut self.selection,
-            gizmo: &mut self.gizmo,
+            pointer_in_viewport: &mut self.pointer_in_viewport,
         };
         DockArea::new(&mut self.state)
             .style(Style::from_egui(ctx.style().as_ref()))
@@ -188,7 +191,7 @@ struct TabViewer<'a> {
     selected_entities: &'a mut SelectedEntities,
     selection: &'a mut InspectorSelection,
     viewport_rect: &'a mut egui::Rect,
-    gizmo: &'a mut Gizmo,
+    pointer_in_viewport: &'a mut bool,
 }
 
 impl egui_dock::TabViewer for TabViewer<'_> {
@@ -199,11 +202,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
         let type_registry = type_registry.read();
 
         match window {
-            EguiWindow::GameView => {
-                *self.viewport_rect = ui.clip_rect();
-
-                draw_gizmo(ui, &mut self.gizmo, self.world, self.selected_entities);
-            }
+            EguiWindow::GameView => *self.viewport_rect = ui.clip_rect(),
             EguiWindow::Hierarchy => {
                 let selected = hierarchy_ui(self.world, ui, self.selected_entities);
                 if selected {
@@ -239,6 +238,10 @@ impl egui_dock::TabViewer for TabViewer<'_> {
                 }
             },
         }
+
+        *self.pointer_in_viewport = ui
+            .ctx()
+            .rect_contains_pointer(LayerId::background(), self.viewport_rect.shrink(16.));
     }
 
     fn title(&mut self, window: &mut Self::Tab) -> egui_dock::egui::WidgetText {
@@ -247,56 +250,6 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 
     fn clear_background(&self, window: &Self::Tab) -> bool {
         !matches!(window, EguiWindow::GameView)
-    }
-}
-
-#[allow(unused)]
-fn draw_gizmo(
-    ui: &mut egui::Ui,
-    gizmo: &mut Gizmo,
-    world: &mut World,
-    selected_entities: &SelectedEntities,
-) {
-    let (cam_transform, projection) = world
-        .query_filtered::<(&GlobalTransform, &Projection), With<MainCamera>>()
-        .single(world)
-        .expect("Camera not found");
-    let view_matrix = Mat4::from(cam_transform.affine().inverse());
-    let projection_matrix = projection.get_clip_from_view();
-
-    if selected_entities.len() != 1 {
-        #[allow(clippy::needless_return)]
-        return;
-    }
-
-    for selected in selected_entities.iter() {
-        let Some(transform) = world.get::<Transform>(selected) else {
-            continue;
-        };
-        let model_matrix = transform.compute_matrix();
-
-        gizmo.update_config(GizmoConfig {
-            view_matrix: view_matrix.as_dmat4().into(),
-            projection_matrix: projection_matrix.as_dmat4().into(),
-            orientation: GizmoOrientation::Local,
-            ..Default::default()
-        });
-        let transform = transform_gizmo_egui::math::Transform::from_scale_rotation_translation(
-            transform.scale.as_dvec3(),
-            transform.rotation.as_dquat(),
-            transform.translation.as_dvec3(),
-        );
-        let Some((result, transforms)) = gizmo.interact(ui, &[transform]) else {
-            continue;
-        };
-        let new = transforms[0];
-
-        let mut transform = world.get_mut::<Transform>(selected).unwrap();
-        *transform = Transform {
-            translation: DVec3::from(new.translation).as_vec3(),
-            rotation: DQuat::from_array(<[f64; 4]>::from(new.rotation)).as_quat(),
-            scale: DVec3::from(new.scale).as_vec3(),
-        };
     }
 }
 
@@ -374,7 +327,10 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut egui_global_settings: ResMut<EguiGlobalSettings>,
 ) {
+    egui_global_settings.auto_create_primary_context = false;
+
     let box_size = 2.0;
     let box_thickness = 0.15;
     let box_offset = (box_size + box_thickness) / 2.0;
@@ -489,7 +445,20 @@ fn setup(
         Camera3d::default(),
         Transform::from_xyz(0.0, box_offset, 4.0)
             .looking_at(Vec3::new(0.0, box_offset, 0.0), Vec3::Y),
-        MainCamera,
+        GizmoCamera,
         // PickRaycastSource,
+    ));
+
+    // egui camera
+    commands.spawn((
+        Camera2d,
+        Name::new("Egui Camera"),
+        PrimaryEguiContext,
+        RenderLayers::none(),
+        Camera {
+            order: 1,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
     ));
 }

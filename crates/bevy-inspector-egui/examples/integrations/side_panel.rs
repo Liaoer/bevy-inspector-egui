@@ -1,24 +1,22 @@
 use std::ops::DerefMut;
 
 use bevy::{input::common_conditions::input_toggle_active, prelude::*};
+use bevy_egui::PrimaryEguiContext;
 use bevy_inspector_egui::{
-    bevy_egui::{EguiContext, EguiContextPass, EguiPlugin},
-    bevy_inspector::hierarchy::SelectedEntities,
     DefaultInspectorConfigPlugin,
+    bevy_egui::{EguiContext, EguiPlugin, EguiPrimaryContextPass},
+    bevy_inspector::hierarchy::SelectedEntities,
 };
-use bevy_window::PrimaryWindow;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(EguiPlugin {
-            enable_multipass_for_primary_context: true,
-        })
+        .add_plugins(EguiPlugin::default())
         .add_plugins(DefaultInspectorConfigPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, rotator_system)
         .add_systems(
-            EguiContextPass,
+            EguiPrimaryContextPass,
             inspector_ui.run_if(input_toggle_active(true, KeyCode::Escape)),
         )
         .run();
@@ -26,7 +24,7 @@ fn main() {
 
 fn inspector_ui(world: &mut World, mut selected_entities: Local<SelectedEntities>) {
     let Ok(mut ctx) = world
-        .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .single_mut(world)
     else {
         return;

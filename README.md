@@ -28,7 +28,7 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(EguiPlugin { enable_multipass_for_primary_context: true })
+        .add_plugins(EguiPlugin::default())
         .add_plugins(WorldInspectorPlugin::new())
         .run();
 }
@@ -59,7 +59,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .init_resource::<Configuration>() // `ResourceInspectorPlugin` won't initialize the resource
         .register_type::<Configuration>() // you need to register your type to display it
-        .add_plugins(EguiPlugin { enable_multipass_for_primary_context: true })
+        .add_plugins(EguiPlugin::default())
         .add_plugins(ResourceInspectorPlugin::<Configuration>::default())
         // also works with built-in resources, as long as they are `Reflect`
         .add_plugins(ResourceInspectorPlugin::<Time>::default())
@@ -84,15 +84,15 @@ use std::any::TypeId;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(EguiPlugin { enable_multipass_for_primary_context: true })
+        .add_plugins(EguiPlugin::default())
         .add_plugins(bevy_inspector_egui::DefaultInspectorConfigPlugin) // adds default options and `InspectorEguiImpl`s
-        .add_systems(EguiContextPass, inspector_ui)
+        .add_systems(EguiPrimaryContextPass, inspector_ui)
         .run();
 }
 
 fn inspector_ui(world: &mut World) {
     let Ok(egui_context) = world
-        .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .get_single(world)
     else {
         return;
@@ -123,6 +123,7 @@ Pair this with a crate like [`egui_dock`](https://docs.rs/egui_dock/latest/egui_
 - `highlight_changes` - highlight changed values every frame.
   Ideally this should be runtime-configurable, but it was implemented like this as a stopgap solution. If you'd like to configure this at runtime, please open an issue to let me know it's more of a priority.
 - `bevy_pbr` (default): register default options for `bevy_pbr` types. You should disable this if you don't use `bevy_pbr` to reduce the dependency footprint.
+- `bevy_gizmos`: enable inspecting of `GizmoConfigGroup`
 
 ## FAQ
 
@@ -147,6 +148,10 @@ Pair this with a crate like [`egui_dock`](https://docs.rs/egui_dock/latest/egui_
 
 | bevy | bevy-inspector-egui |
 | ---- | ------------------- |
+| 0.17 | 0.35                |
+| 0.17 | 0.34                |
+| 0.16 | 0.33                |
+| 0.16 | 0.32                |
 | 0.16 | 0.31                |
 | 0.15 | 0.30                |
 | 0.15 | 0.29                |

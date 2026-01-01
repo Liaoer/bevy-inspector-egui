@@ -270,7 +270,7 @@ pub mod easymark {
 
         fn numbered_point(ui: &mut Ui, width: f32, number: &str) -> Response {
             let font_id = TextStyle::Body.resolve(ui.style());
-            let row_height = ui.fonts(|fonts| fonts.row_height(&font_id));
+            let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font_id));
             let (rect, response) = ui.allocate_exact_size(vec2(width, row_height), Sense::hover());
             let text = format!("{number}.");
             let text_color = ui.visuals().strong_text_color();
@@ -392,19 +392,19 @@ pub mod easymark {
 
             // ```{language}\n{code}```
             fn code_block(&mut self) -> Option<Item<'a>> {
-                if let Some(language_start) = self.s.strip_prefix("```") {
-                    if let Some(newline) = language_start.find('\n') {
-                        let language = &language_start[..newline];
-                        let code_start = &language_start[newline + 1..];
-                        if let Some(end) = code_start.find("\n```") {
-                            let code = &code_start[..end].trim();
-                            self.s = &code_start[end + 4..];
-                            self.start_of_line = false;
-                            return Some(Item::CodeBlock(language, code));
-                        } else {
-                            self.s = "";
-                            return Some(Item::CodeBlock(language, code_start));
-                        }
+                if let Some(language_start) = self.s.strip_prefix("```")
+                    && let Some(newline) = language_start.find('\n')
+                {
+                    let language = &language_start[..newline];
+                    let code_start = &language_start[newline + 1..];
+                    if let Some(end) = code_start.find("\n```") {
+                        let code = &code_start[..end].trim();
+                        self.s = &code_start[end + 4..];
+                        self.start_of_line = false;
+                        return Some(Item::CodeBlock(language, code));
+                    } else {
+                        self.s = "";
+                        return Some(Item::CodeBlock(language, code_start));
                     }
                 }
                 None

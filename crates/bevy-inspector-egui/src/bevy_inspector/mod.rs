@@ -39,16 +39,17 @@
 
 use std::any::TypeId;
 use std::marker::PhantomData;
+use std::path::Path;
 
-use crate::utils::{pretty_type_name, pretty_type_name_str};
+use crate::utils::{self, pretty_type_name, pretty_type_name_str};
 use bevy_asset::{Asset, AssetServer, Assets, ReflectAsset, UntypedAssetId};
 use bevy_ecs::query::{QueryFilter, WorldQuery};
 use bevy_ecs::world::CommandQueue;
 use bevy_ecs::{component::ComponentId, prelude::*};
 use bevy_reflect::{Reflect, TypeRegistry};
 use bevy_state::state::{FreelyMutableState, NextState, State};
-use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 
 pub(crate) mod errors;
 
@@ -56,7 +57,7 @@ pub(crate) mod errors;
 pub mod hierarchy;
 
 use crate::reflect_inspector::{Context, InspectorUi};
-use crate::restricted_world_view::RestrictedWorldView;
+use crate::restricted_world_view::{ReflectBorrow, RestrictedWorldView};
 
 /// Display a single [`&mut dyn Reflect`](bevy_reflect::Reflect).
 ///
@@ -363,27 +364,30 @@ impl<F: QueryFilter + Clone> Clone for Filter<F> {
 
 impl<F: QueryFilter> Filter<F> {
     pub fn from_ui_fuzzy(ui: &mut egui::Ui, id: egui::Id) -> Self {
-        let word = {
-            let id = id.with("word");
-            // filter, using eguis memory and provided id
-            let mut filter_string = ui.memory_mut(|mem| {
-                let filter: &mut String = mem.data.get_persisted_mut_or_default(id);
-                filter.clone()
-            });
-            ui.text_edit_singleline(&mut filter_string);
-            ui.memory_mut(|mem| {
-                *mem.data.get_persisted_mut_or_default(id) = filter_string.clone();
-            });
+        ui.horizontal(|ui| {
+            let word = {
+                let id = id.with("word");
+                // filter, using eguis memory and provided id
+                let mut filter_string = ui.memory_mut(|mem| {
+                    let filter: &mut String = mem.data.get_persisted_mut_or_default(id);
+                    filter.clone()
+                });
+                ui.add(egui::TextEdit::singleline(&mut filter_string).desired_width(180.));
+                ui.memory_mut(|mem| {
+                    *mem.data.get_persisted_mut_or_default(id) = filter_string.clone();
+                });
 
-            // improves overall matching
-            filter_string.to_lowercase()
-        };
+                // improves overall matching
+                filter_string.to_lowercase()
+            };
 
-        Filter {
-            word,
-            is_fuzzy: true,
-            marker: PhantomData,
-        }
+            Filter {
+                word,
+                is_fuzzy: true,
+                marker: PhantomData,
+            }
+        })
+        .inner
     }
 
     pub fn from_ui(ui: &mut egui::Ui, id: egui::Id) -> Self {
@@ -455,6 +459,7 @@ fn self_or_children_satisfy_filter(
     is_fuzzy: bool,
 ) -> bool {
     let name = guess_entity_name(world, entity);
+
     let self_matches = if is_fuzzy {
         let matcher = SkimMatcherV2::default();
         matcher.fuzzy_match(name.as_str(), filter).is_some()
@@ -518,29 +523,22 @@ fn ui_for_entity_with_children_inner<F>(
     let children = world
         .get::<Children>(entity)
         .map(|children| children.iter().collect::<Vec<_>>());
-    if let Some(mut children) = children {
-        if !children.is_empty() {
-            filter.filter_entities(world, &mut children);
-            ui.label("Children");
-            for child in children {
-                let id = id.with(child);
+    if let Some(mut children) = children
+        && !children.is_empty()
+    {
+        filter.filter_entities(world, &mut children);
+        ui.label("Children");
+        for child in children {
+            let id = id.with(child);
 
-                let child_entity_name = guess_entity_name(world, child);
-                egui::CollapsingHeader::new(&child_entity_name)
-                    .id_salt(id)
-                    .show(ui, |ui| {
-                        ui.label(&child_entity_name);
+            let child_entity_name = guess_entity_name(world, child);
+            egui::CollapsingHeader::new(&child_entity_name)
+                .id_salt(id)
+                .show(ui, |ui| {
+                    ui.label(&child_entity_name);
 
-                        ui_for_entity_with_children_inner(
-                            world,
-                            child,
-                            ui,
-                            id,
-                            type_registry,
-                            filter,
-                        );
-                    });
-            }
+                    ui_for_entity_with_children_inner(world, child, ui, id, type_registry, filter);
+                });
         }
     }
 
@@ -613,7 +611,7 @@ pub(crate) fn ui_for_entity_components(
             queue: queue.as_deref_mut(),
         };
 
-        let mut value = match component_view.get_entity_component_reflect(
+        let value = match component_view.get_entity_component_reflect(
             entity,
             component_type_id,
             type_registry,
@@ -628,6 +626,11 @@ pub(crate) fn ui_for_entity_components(
             }
         };
 
+        let changed_by = match &value {
+            ReflectBorrow::Mutable(val) => val.changed_by().into_option(),
+            ReflectBorrow::Immutable(_) => None,
+        };
+
         if value.is_changed() {
             #[cfg(feature = "highlight_changes")]
             set_highlight_style(ui);
@@ -636,20 +639,61 @@ pub(crate) fn ui_for_entity_components(
         let _response = header.show(ui, |ui| {
             ui.reset_style();
 
-            let inspector_changed = InspectorUi::for_bevy(type_registry, &mut cx)
-                .ui_for_reflect_with_options(
-                    value.bypass_change_detection().as_partial_reflect_mut(),
-                    ui,
-                    id.with(component_id),
-                    &(),
-                );
+            let mut env = InspectorUi::for_bevy(type_registry, &mut cx);
+            let id = id.with(component_id);
+            let options = &();
 
-            if inspector_changed {
-                value.set_changed();
-            }
+            match value {
+                ReflectBorrow::Mutable(mut value) => {
+                    let changed = env.ui_for_reflect_with_options(
+                        value.bypass_change_detection().as_partial_reflect_mut(),
+                        ui,
+                        id,
+                        options,
+                    );
+
+                    if changed {
+                        value.set_changed();
+                    }
+                }
+                ReflectBorrow::Immutable(value) => env.ui_for_reflect_readonly_with_options(
+                    value.as_partial_reflect(),
+                    ui,
+                    id,
+                    options,
+                ),
+            };
         });
+
+        let response = _response.header_response;
+
+        if let Some(location) = changed_by {
+            response.context_menu(|ui| {
+                ui.label("Last change:");
+                let path = Path::new(location.file());
+                let pretty = utils::trim_cargo_registry_path(path);
+
+                if ui
+                    .button(format!(
+                        "{}:{}:{}",
+                        pretty.as_deref().unwrap_or(path).display(),
+                        location.line(),
+                        location.column()
+                    ))
+                    .clicked()
+                {
+                    if let Err(e) = utils::open_file_at(location) {
+                        bevy_log::error!("Failed to open last change location: {}", e);
+                    } else {
+                        bevy_log::info!("Successfully opened {location}");
+                    }
+                }
+            });
+        }
+
         #[cfg(feature = "documentation")]
-        crate::egui_utils::show_docs(_response.header_response, type_docs);
+        crate::egui_utils::show_docs(response, type_docs);
+
         ui.reset_style();
     }
 }
@@ -687,11 +731,12 @@ fn components_of_entity(
     let archetype = entity_ref.archetype();
     let mut components: Vec<_> = archetype
         .components()
+        .iter()
         .map(|component_id| {
-            let info = world.world().components().get_info(component_id).unwrap();
-            let name = pretty_type_name_str(info.name());
+            let info = world.world().components().get_info(*component_id).unwrap();
+            let name = pretty_type_name_str(&info.name().to_string());
 
-            (name, component_id, info.type_id(), info.layout().size())
+            (name, *component_id, info.type_id(), info.layout().size())
         })
         .collect();
     components.sort_by(|(name_a, ..), (name_b, ..)| name_a.cmp(name_b));
@@ -884,30 +929,64 @@ pub mod by_type_id {
 
         let ids: Vec<_> = reflect_asset.ids(world).collect();
 
-        // Create a context with access to the entire world. Displaying the `Handle<T>` will short circuit into
-        // displaying the T with a world view excluding Assets<T>.
-        let world_view = RestrictedWorldView::new(world);
-        let mut queue = CommandQueue::default();
-        let mut cx = Context {
-            world: Some(world_view),
-            queue: Some(&mut queue),
-        };
-
         for handle_id in ids {
             let id = egui::Id::new(handle_id);
-            let mut handle = reflect_handle
-                .typed(UntypedHandle::Weak(handle_id))
-                .into_partial_reflect();
 
-            egui::CollapsingHeader::new(handle_name(handle_id, asset_server.as_ref()))
-                .id_salt(id)
-                .show(ui, |ui| {
-                    let mut env = InspectorUi::for_bevy(type_registry, &mut cx);
-                    env.ui_for_reflect_with_options(&mut *handle, ui, id, &());
-                });
+            // If we have a `Uuid` asset handle, we can obtain a `Handle<T>`,
+            // which can be useful e.g. for `Handle<Image>` which has its own explicit egui UI.
+            if let UntypedAssetId::Uuid { uuid, type_id } = handle_id {
+                let mut handle = reflect_handle
+                    .typed(UntypedHandle::Uuid { uuid, type_id })
+                    .into_partial_reflect();
+
+                // Create a context with access to the entire world. Displaying the `Handle<T>` will short circuit into
+                // displaying the T with a world view excluding Assets<T>.
+                let mut queue = CommandQueue::default();
+                let mut cx = Context {
+                    world: Some(RestrictedWorldView::new(world)),
+                    queue: Some(&mut queue),
+                };
+
+                egui::CollapsingHeader::new(handle_name(handle_id, asset_server.as_ref()))
+                    .id_salt(id)
+                    .show(ui, |ui| {
+                        let mut env = InspectorUi::for_bevy(type_registry, &mut cx);
+                        env.ui_for_reflect_with_options(&mut *handle, ui, id, &());
+                    });
+
+                queue.apply(world);
+            }
+            // in the general case, we currently cannot cast get a `Handle<T>` through
+            // `ReflectAsset`/`ReflectHandle`. But we can still get the `&mut T`
+            // and inspect that (which works for e.g. `StandardMaterial`).
+            else {
+                let mut world_view = RestrictedWorldView::new(world);
+                let (asset_world, rest_world) =
+                    world_view.split_off_resource(reflect_asset.assets_resource_type_id());
+
+                // # SAFETY:
+                // - The world cell has unique access to `Assets<T>`
+                // - We only call this once, so no overlapping references possible
+                let data = unsafe {
+                    reflect_asset
+                        .get_unchecked_mut(asset_world.world(), handle_id)
+                        .unwrap()
+                };
+
+                let mut queue = CommandQueue::default();
+                let mut cx = Context {
+                    world: Some(rest_world),
+                    queue: Some(&mut queue),
+                };
+
+                egui::CollapsingHeader::new(handle_name(handle_id, asset_server.as_ref()))
+                    .id_salt(id)
+                    .show(ui, |ui| {
+                        let mut env = InspectorUi::for_bevy(type_registry, &mut cx);
+                        env.ui_for_reflect_with_options(data, ui, id, &());
+                    });
+            }
         }
-
-        queue.apply(world)
     }
 
     /// Display a given asset by handle and asset [`TypeId`]
@@ -956,16 +1035,21 @@ pub mod by_type_id {
         };
 
         let id = egui::Id::new(handle);
-        let mut handle = reflect_handle
-            .typed(UntypedHandle::Weak(handle))
-            .into_partial_reflect();
 
-        let mut env = InspectorUi::for_bevy(type_registry, &mut cx);
-        let changed = env.ui_for_reflect_with_options(&mut *handle, ui, id, &());
+        if let UntypedAssetId::Uuid { uuid, type_id } = handle {
+            let mut handle = reflect_handle
+                .typed(UntypedHandle::Uuid { uuid, type_id })
+                .into_partial_reflect();
 
-        queue.apply(world);
+            let mut env = InspectorUi::for_bevy(type_registry, &mut cx);
+            let changed = env.ui_for_reflect_with_options(&mut *handle, ui, id, &());
 
-        changed
+            queue.apply(world);
+
+            changed
+        } else {
+            false
+        }
     }
 }
 
@@ -1061,7 +1145,7 @@ pub mod short_circuit {
                 );
                 let asset_value =
                 // SAFETY: the world allows mutable access to `Assets<T>`
-                unsafe { reflect_asset.get_unchecked_mut(world.world(), handle) };
+                unsafe { reflect_asset.get_unchecked_mut(world.world(), &handle) };
                 match asset_value {
                     Some(value) => value,
                     None => {
@@ -1151,11 +1235,13 @@ pub mod short_circuit {
                 used_handles.push(handle_id);
 
                 let asset_value = {
-                    assert!(assets_view
-                        .allows_access_to_resource(reflect_asset.assets_resource_type_id()));
+                    assert!(
+                        assets_view
+                            .allows_access_to_resource(reflect_asset.assets_resource_type_id())
+                    );
                     let asset_value =
                         // SAFETY: the world allows mutable access to `Assets<T>`
-                        unsafe { reflect_asset.get_unchecked_mut(world.world(), handle) };
+                        unsafe { reflect_asset.get_unchecked_mut(world.world(), &handle) };
                     match asset_value {
                         Some(value) => value,
                         None => {
@@ -1239,7 +1325,7 @@ pub mod short_circuit {
                 assert!(
                     assets_view.allows_access_to_resource(reflect_asset.assets_resource_type_id())
                 );
-                let asset_value = reflect_asset.get(interior_mutable_world, handle);
+                let asset_value = reflect_asset.get(interior_mutable_world, &handle);
                 match asset_value {
                     Some(value) => value,
                     None => {

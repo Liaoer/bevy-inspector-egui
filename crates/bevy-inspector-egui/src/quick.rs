@@ -12,16 +12,15 @@ use crate::{bevy_inspector::Filter, utils::pretty_type_name};
 use bevy_app::Plugin;
 use bevy_asset::Asset;
 use bevy_ecs::{prelude::*, query::QueryFilter, schedule::BoxedCondition};
-use bevy_egui::{EguiContext, EguiContextPass, EguiPlugin};
+use bevy_egui::{EguiContext, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
 use bevy_reflect::Reflect;
 use bevy_state::state::FreelyMutableState;
-use bevy_window::PrimaryWindow;
 
-use crate::{bevy_inspector, DefaultInspectorConfigPlugin};
+use crate::{DefaultInspectorConfigPlugin, bevy_inspector};
 
 const DEFAULT_SIZE: (f32, f32) = (320., 160.);
 
-//TODO: Do we need this with EguiContextPass?
+//TODO: Do we need this with EguiPrimaryContextPass?
 // #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 // struct Inspect;
 
@@ -49,7 +48,7 @@ const DEFAULT_SIZE: (f32, f32) = (320., 160.);
 /// fn main() {
 ///     App::new()
 ///         .add_plugins(DefaultPlugins)
-///         .add_plugins(EguiPlugin { enable_multipass_for_primary_context: true })
+///         .add_plugins(EguiPlugin::default())
 ///         .add_plugins(WorldInspectorPlugin::new())
 ///         .run();
 /// }
@@ -65,7 +64,7 @@ impl WorldInspectorPlugin {
     }
 
     /// Only show the UI of the specified condition is active
-    pub fn run_if<M>(mut self, condition: impl Condition<M>) -> Self {
+    pub fn run_if<M>(mut self, condition: impl SystemCondition<M>) -> Self {
         let condition_system = IntoSystem::into_system(condition);
         self.condition = Mutex::new(Some(Box::new(condition_system) as BoxedCondition));
         self
@@ -85,13 +84,13 @@ impl Plugin for WorldInspectorPlugin {
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(EguiContextPass, system);
+        app.add_systems(EguiPrimaryContextPass, system);
     }
 }
 
 fn world_inspector_ui(world: &mut World) {
     let egui_context = world
-        .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .single(world);
 
     let Ok(egui_context) = egui_context else {
@@ -160,7 +159,7 @@ impl<T> ResourceInspectorPlugin<T> {
     }
 
     /// Only show the UI of the specified condition is active
-    pub fn run_if<M>(mut self, condition: impl Condition<M>) -> Self {
+    pub fn run_if<M>(mut self, condition: impl SystemCondition<M>) -> Self {
         let condition_system = IntoSystem::into_system(condition);
         self.condition = Mutex::new(Some(Box::new(condition_system) as BoxedCondition));
         self
@@ -180,13 +179,13 @@ impl<T: Resource + Reflect> Plugin for ResourceInspectorPlugin<T> {
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(EguiContextPass, system);
+        app.add_systems(EguiPrimaryContextPass, system);
     }
 }
 
 fn inspector_ui<T: Resource + Reflect>(world: &mut World) {
     let egui_context = world
-        .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .single(world);
 
     let Ok(egui_context) = egui_context else {
@@ -253,7 +252,7 @@ impl<T> StateInspectorPlugin<T> {
     }
 
     /// Only show the UI of the specified condition is active
-    pub fn run_if<M>(mut self, condition: impl Condition<M>) -> Self {
+    pub fn run_if<M>(mut self, condition: impl SystemCondition<M>) -> Self {
         let condition_system = IntoSystem::into_system(condition);
         self.condition = Mutex::new(Some(Box::new(condition_system) as BoxedCondition));
         self
@@ -273,13 +272,13 @@ impl<T: FreelyMutableState + Reflect> Plugin for StateInspectorPlugin<T> {
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(EguiContextPass, system);
+        app.add_systems(EguiPrimaryContextPass, system);
     }
 }
 
 fn state_ui<T: FreelyMutableState + Reflect>(world: &mut World) {
     let egui_context = world
-        .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .single(world);
 
     let Ok(egui_context) = egui_context else {
@@ -334,7 +333,7 @@ impl<A> AssetInspectorPlugin<A> {
     }
 
     /// Only show the UI of the specified condition is active
-    pub fn run_if<M>(mut self, condition: impl Condition<M>) -> Self {
+    pub fn run_if<M>(mut self, condition: impl SystemCondition<M>) -> Self {
         let condition_system = IntoSystem::into_system(condition);
         self.condition = Mutex::new(Some(Box::new(condition_system) as BoxedCondition));
         self
@@ -354,13 +353,13 @@ impl<A: Asset + Reflect> Plugin for AssetInspectorPlugin<A> {
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(EguiContextPass, system);
+        app.add_systems(EguiPrimaryContextPass, system);
     }
 }
 
 fn asset_inspector_ui<A: Asset + Reflect>(world: &mut World) {
     let egui_context = world
-        .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .single(world);
 
     let Ok(egui_context) = egui_context else {
@@ -410,7 +409,7 @@ impl<A> FilterQueryInspectorPlugin<A> {
     }
 
     /// Only show the UI of the specified condition is active
-    pub fn run_if<M>(mut self, condition: impl Condition<M>) -> Self {
+    pub fn run_if<M>(mut self, condition: impl SystemCondition<M>) -> Self {
         let condition_system = IntoSystem::into_system(condition);
         self.condition = Mutex::new(Some(Box::new(condition_system) as BoxedCondition));
         self
@@ -434,13 +433,13 @@ where
         if let Some(condition) = condition {
             system.run_if_dyn(condition);
         }
-        app.add_systems(EguiContextPass, system);
+        app.add_systems(EguiPrimaryContextPass, system);
     }
 }
 
 fn entity_query_ui<F: QueryFilter>(world: &mut World) {
     let egui_context = world
-        .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .single(world);
 
     let Ok(egui_context) = egui_context else {
@@ -463,7 +462,7 @@ fn check_plugins(app: &bevy_app::App, name: &str) {
         panic!(
             r#"`{name}` should be added after the default plugins:
         .add_plugins(DefaultPlugins)
-        .add_plugins(EguiPlugin {{ .. }})
+        .add_plugins(EguiPlugin::default())
         .add_plugins({name}::default())
             "#,
         );
@@ -472,7 +471,7 @@ fn check_plugins(app: &bevy_app::App, name: &str) {
     if !app.is_plugin_added::<EguiPlugin>() {
         panic!(
             r#"`{name}` needs to be added after `EguiPlugin`:
-        .add_plugins(EguiPlugin {{ enable_multipass_for_primary_context: true }})
+        .add_plugins(EguiPlugin::default())
         .add_plugins({name}::default())
             "#,
         );

@@ -1,3 +1,10 @@
+use std::{
+    panic::Location,
+    path::{Path, PathBuf},
+};
+
+use bevy_ecs::error::Result;
+
 pub fn pretty_type_name<T>() -> String {
     format!("{:?}", disqualified::ShortName::of::<T>())
 }
@@ -55,33 +62,76 @@ pub mod guess_entity_name {
         #[rustfmt::skip]
         let associations = &[
             ("bevy_window::window::PrimaryWindow", "Primary Window"),
-            ("bevy_core_pipeline::core_3d::camera_3d::Camera3d", "Camera3d"),
-            ("bevy_core_pipeline::core_2d::camera_2d::Camera2d", "Camera2d"),
-            ("bevy_pbr::light::point_light::PointLight", "PointLight"),
-            ("bevy_pbr::light::directional_light::DirectionalLight", "DirectionalLight"),
+            ("bevy_camera::components::Camera3d", "Camera3d"),
+            ("bevy_camera::components::Camera2d", "Camera2d"),
+            ("bevy_light::point_light::PointLight", "PointLight"),
+            ("bevy_light::directional_light::DirectionalLight", "DirectionalLight"),
             ("bevy_text::text::Text", "Text"),
             ("bevy_ui::ui_node::Node", "Node"),
-            ("bevy_asset::handle::Handle<bevy_pbr::pbr_material::StandardMaterial>", "Pbr Mesh"),
+            ("bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>", "Pbr Mesh"),
             ("bevy_window::window::Window", "Window"),
-            ("bevy_ecs::observer::runner::ObserverState", "Observer"),
+            ("bevy_ecs::observer::distributed_storage::Observer", "Observer"),
             ("bevy_window::monitor::Monitor", "Monitor"),
             ("bevy_picking::pointer::PointerId", "Pointer"),
         ];
 
-        let type_names = archetype.components().filter_map(|id| {
-            let name = world.components().get_info(id)?.name();
+        let type_names = archetype.components().iter().filter_map(|id| {
+            let name = world.components().get_info(*id)?.name();
             Some(name)
         });
 
         for component_type in type_names {
-            if let Some(name) = associations
-                .iter()
-                .find_map(|&(name, matches)| (component_type == name).then_some(matches))
-            {
+            if let Some(name) = associations.iter().find_map(|&(name, matches)| {
+                (component_type.to_string() == name).then_some(matches)
+            }) {
                 return format!("{name} ({entity})");
             }
         }
 
         format!("Entity ({entity})")
     }
+}
+
+pub fn trim_cargo_registry_path(path: &Path) -> Option<PathBuf> {
+    let mut components = path.components().peekable();
+    while let Some(c) = components.next() {
+        if c.as_os_str() == ".cargo" {
+            if components.next()?.as_os_str() != "registry" {
+                return None;
+            }
+            if components.next()?.as_os_str() != "src" {
+                return None;
+            }
+            components.next()?;
+            return Some(components.collect());
+        }
+    }
+
+    None
+}
+
+pub fn open_file_at(location: &Location<'_>) -> Result<()> {
+    let path = Path::new(location.file());
+
+    // try editors supporting opening file:col first (in order of most likely to be explicitly installed)
+    if std::process::Command::new("zeditor")
+        .arg(location.to_string())
+        .spawn()
+        .is_ok()
+    {
+        return Ok(());
+    }
+
+    if std::process::Command::new("code")
+        .arg("--goto")
+        .arg(location.to_string())
+        .spawn()
+        .is_ok()
+    {
+        return Ok(());
+    }
+
+    opener::open(path)?;
+
+    Ok(())
 }

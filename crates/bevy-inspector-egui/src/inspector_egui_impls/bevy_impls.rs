@@ -7,8 +7,7 @@ use std::any::Any;
 
 #[cfg(feature = "bevy_render")]
 use ::{
-    bevy_asset::Assets, bevy_asset::Handle, bevy_render::mesh::Mesh,
-    bevy_render::view::RenderLayers,
+    bevy_asset::Assets, bevy_asset::Handle, bevy_camera::visibility::RenderLayers, bevy_mesh::Mesh,
 };
 
 #[cfg(feature = "bevy_render")]
@@ -75,14 +74,14 @@ impl InspectorPrimitive for Entity {
                             id,
                             env.type_registry,
                         );
-                        if options.despawnable && world.contains_entity(entity) {
-                            if let Some(queue) = queue {
-                                if egui_utils::label_button(ui, "✖ Despawn", egui::Color32::RED) {
-                                    queue.push(move |world: &mut World| {
-                                        world.entity_mut(entity).despawn();
-                                    });
-                                }
-                            }
+                        if options.despawnable
+                            && world.contains_entity(entity)
+                            && let Some(queue) = queue
+                            && egui_utils::label_button(ui, "✖ Despawn", egui::Color32::RED)
+                        {
+                            queue.push(move |world: &mut World| {
+                                world.entity_mut(entity).despawn();
+                            });
                         }
                     });
             }
@@ -171,8 +170,8 @@ fn mesh_ui_inner(mesh: &Mesh, ui: &mut egui::Ui) {
         if let Some(indices) = mesh.indices() {
             ui.label("Indices");
             let len = match indices {
-                bevy_render::mesh::Indices::U16(vec) => vec.len(),
-                bevy_render::mesh::Indices::U32(vec) => vec.len(),
+                bevy_mesh::Indices::U16(vec) => vec.len(),
+                bevy_mesh::Indices::U32(vec) => vec.len(),
             };
             ui.label(len.to_string());
             ui.end_row();
@@ -338,6 +337,60 @@ impl InspectorPrimitive for RenderLayers {
     fn ui_readonly(&self, ui: &mut egui::Ui, _: &dyn Any, _: egui::Id, _: InspectorUi<'_, '_>) {
         for layer in self.iter() {
             ui.label(format!("- {layer}"));
+        }
+    }
+}
+
+#[cfg(feature = "bevy_gizmos")]
+impl InspectorPrimitive for bevy_gizmos::config::GizmoConfigStore {
+    fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        _: &dyn Any,
+        id: egui::Id,
+        mut env: InspectorUi<'_, '_>,
+    ) -> bool {
+        for (ty, group, value) in self.iter_mut() {
+            use egui::CollapsingHeader;
+
+            let name = env
+                .type_registry
+                .get(*ty)
+                .map(|x| x.type_info().ty().short_path())
+                .unwrap_or("<unknown gizmo group>");
+            CollapsingHeader::new(name)
+                .id_salt(id.with(ty))
+                .show(ui, |ui| {
+                    env.ui_for_reflect(group, ui);
+                    ui.separator();
+                    env.ui_for_reflect_with_options(value, ui, egui::Id::new("data"), &());
+                });
+        }
+
+        false
+    }
+    fn ui_readonly(
+        &self,
+        ui: &mut egui::Ui,
+        _: &dyn Any,
+        id: egui::Id,
+        mut env: InspectorUi<'_, '_>,
+    ) {
+        for (ty, group, value) in self.iter() {
+            use egui::CollapsingHeader;
+
+            let name = env
+                .type_registry
+                .get(*ty)
+                .map(|x| x.type_info().ty().short_path())
+                .unwrap_or("<unknown gizmo group>");
+            CollapsingHeader::new(name)
+                .id_salt(id.with(ty))
+                .show(ui, |ui| {
+                    env.ui_for_reflect_readonly(group, ui);
+                    ui.separator();
+                    env.ui_for_reflect_readonly_with_options(value, ui, egui::Id::new("data"), &());
+                });
         }
     }
 }

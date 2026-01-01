@@ -1,8 +1,10 @@
 use bevy::prelude::*;
-use bevy_inspector_egui::bevy_egui::EguiPlugin;
-use bevy_inspector_egui::inspector_egui_impls::{InspectorEguiImpl, InspectorPrimitive};
-use bevy_inspector_egui::quick::ResourceInspectorPlugin;
-use bevy_inspector_egui::reflect_inspector::InspectorUi;
+use bevy_inspector_egui::{
+    bevy_egui::EguiPlugin,
+    inspector_egui_impls::{InspectorEguiImpl, InspectorPrimitive},
+    quick::ResourceInspectorPlugin,
+    reflect_inspector::InspectorUi,
+};
 
 #[derive(Resource, Reflect, Default)]
 struct Config {
@@ -43,12 +45,15 @@ impl InspectorPrimitive for ToggleOption {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(EguiPlugin {
-            enable_multipass_for_primary_context: true,
-        })
+        .add_plugins(EguiPlugin::default())
         .add_plugins(ResourceInspectorPlugin::<Config>::new())
         .init_resource::<Config>()
         .register_type::<ToggleOption>()
         .register_type_data::<ToggleOption, InspectorEguiImpl>()
+        .add_systems(Startup, setup)
         .run();
+}
+
+fn setup(mut commands: Commands) {
+    commands.spawn(Camera2d);
 }

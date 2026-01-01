@@ -1,7 +1,7 @@
 //! Custom UI implementations for specific types. Check [`InspectorPrimitive`] for an example.
 
 use crate::{
-    reflect_inspector::{errors::no_multiedit, InspectorUi, ProjectorReflect},
+    reflect_inspector::{InspectorUi, ProjectorReflect, errors::no_multiedit},
     utils::pretty_type_name,
 };
 use bevy_platform::time::Instant;
@@ -224,7 +224,7 @@ fn many_unimplemented<T: Any>(
     false
 }
 
-fn add<T: InspectorPrimitive + TypePath + PartialEq + Clone>(type_registry: &mut TypeRegistry) {
+fn add<T: InspectorPrimitive + TypePath>(type_registry: &mut TypeRegistry) {
     type_registry.register_type_data::<T, InspectorEguiImpl>();
 }
 fn add_of_with_many<T: InspectorPrimitive>(
@@ -266,6 +266,7 @@ pub fn register_std_impls(type_registry: &mut TypeRegistry) {
     add_of_with_many::<usize>(type_registry, std_impls::number_ui_many::<usize>);
     add::<bool>(type_registry);
     add::<String>(type_registry);
+    type_registry.register::<Cow<str>>();
     add::<Cow<str>>(type_registry);
     type_registry.register::<PathBuf>();
     add::<PathBuf>(type_registry);
@@ -277,6 +278,7 @@ pub fn register_std_impls(type_registry: &mut TypeRegistry) {
     add::<std::ops::Range<f64>>(type_registry);
     add::<std::ops::RangeInclusive<f32>>(type_registry);
     add::<std::ops::RangeInclusive<f64>>(type_registry);
+    add::<TypeId>(type_registry);
 
     add::<std::time::Duration>(type_registry);
     add_of_with_many::<Instant>(type_registry, many_unimplemented::<Instant>);
@@ -315,18 +317,22 @@ pub fn register_glam_impls(type_registry: &mut TypeRegistry) {
 /// Register [`InspectorEguiImpl`]s for `bevy` types
 #[rustfmt::skip]
 pub fn register_bevy_impls(type_registry: &mut TypeRegistry) {
+    type_registry.register::<bevy_ecs::entity::Entity>();
     add_of_with_many::<bevy_ecs::entity::Entity>(type_registry, many_unimplemented::<bevy_ecs::entity::Entity>);
     add::<bevy_color::Color>(type_registry);
 
-    #[cfg(feature = "bevy_render")] 
+    #[cfg(feature = "bevy_render")]
     {
-      add_of_with_many::<bevy_asset::Handle<bevy_render::mesh::Mesh>>(type_registry, many_unimplemented::<bevy_asset::Handle<bevy_render::mesh::Mesh>>);
-      add::<bevy_render::view::RenderLayers>(type_registry);
+      type_registry.register::<bevy_camera::visibility::RenderLayers>();
+      add_of_with_many::<bevy_asset::Handle<bevy_mesh::Mesh>>(type_registry, many_unimplemented::<bevy_asset::Handle<bevy_mesh::Mesh>>);
+      add::<bevy_camera::visibility::RenderLayers>(type_registry);
     }
     #[cfg(feature = "bevy_image")]
     {
       add_of_with_many::<bevy_asset::Handle<bevy_image::Image>>(type_registry, many_unimplemented::<bevy_asset::Handle<bevy_image::Image>>);
     }
+    #[cfg(feature = "bevy_gizmos")]
+    add::<bevy_gizmos::config::GizmoConfigStore>(type_registry);
 
     add::<uuid::Uuid>(type_registry);
 }

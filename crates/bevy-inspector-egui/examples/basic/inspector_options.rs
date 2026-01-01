@@ -1,9 +1,9 @@
-use bevy::prelude::*;
-use bevy_egui::EguiContext;
-use bevy_inspector_egui::inspector_options::std_options::NumberDisplay;
-use bevy_inspector_egui::{prelude::*, DefaultInspectorConfigPlugin};
-use bevy_platform::collections::HashMap;
-use bevy_window::PrimaryWindow;
+use bevy::{platform::collections::HashMap, prelude::*};
+use bevy_egui::{EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
+use bevy_inspector_egui::{
+    DefaultInspectorConfigPlugin, bevy_egui::EguiContext,
+    inspector_options::std_options::NumberDisplay, prelude::*,
+};
 
 #[derive(Reflect, InspectorOptions)]
 #[reflect(InspectorOptions)]
@@ -69,16 +69,14 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(DefaultInspectorConfigPlugin)
-        .add_plugins(bevy_egui::EguiPlugin {
-            enable_multipass_for_primary_context: true,
-        })
+        .add_plugins(EguiPlugin::default())
         // types need to be registered
         .init_resource::<UiData>()
         .register_type::<Config>()
         .register_type::<Shape>()
         .register_type::<UiData>()
         .add_systems(Startup, setup)
-        .add_systems(Update, ui_example)
+        .add_systems(EguiPrimaryContextPass, ui_example)
         .run();
 }
 
@@ -88,13 +86,14 @@ fn setup(mut commands: Commands, mut ui_data: ResMut<UiData>) {
 }
 
 fn ui_example(world: &mut World) {
-    let mut egui_context = world
-        .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
+    let Ok(egui_context) = world
+        .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
         .single(world)
-        .expect("EguiContext not found")
-        .clone();
-
-    egui::Window::new("UI").show(egui_context.get_mut(), |ui| {
+    else {
+        return;
+    };
+    let mut ctx = egui_context.clone();
+    egui::Window::new("UI").show(ctx.get_mut(), |ui| {
         egui::ScrollArea::both().show(ui, |ui| {
             bevy_inspector_egui::bevy_inspector::ui_for_resource::<UiData>(world, ui);
         });

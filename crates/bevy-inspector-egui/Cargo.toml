@@ -45,10 +45,10 @@ bevy_color = { path = "../../../../bevy_engine/crates/bevy_color" }
 bevy_platform = { path = "../../../../bevy_engine/crates/bevy_platform" }
 bevy_ecs = { path = "../../../../bevy_engine/crates/bevy_ecs" }
 bevy_log = { path = "../../../../bevy_engine/crates/bevy_log" }
-bevy_log = { path = "../../../../bevy_engine/crates/bevy_camera" }
+bevy_camera = { path = "../../../../bevy_engine/crates/bevy_camera" }
 bevy_math = { path = "../../../../bevy_engine/crates/bevy_math" }
-bevy_math = { path = "../../../../bevy_engine/crates/bevy_mesh" }
-bevy_math = { path = "../../../../bevy_engine/crates/bevy_light" }
+bevy_mesh = { path = "../../../../bevy_engine/crates/bevy_mesh" }
+bevy_light = { path = "../../../../bevy_engine/crates/bevy_light" }
 bevy_reflect = { path = "../../../../bevy_engine/crates/bevy_reflect" }
 bevy_state = { path = "../../../../bevy_engine/crates/bevy_state" }
 bevy_time = { path = "../../../../bevy_engine/crates/bevy_time" }
